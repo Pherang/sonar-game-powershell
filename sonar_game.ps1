@@ -212,17 +212,17 @@ while ($true){
         $move = Enter-PlayerMove $previous_moves
         $previous_moves.add($move) # Track previous moves so that sonar devices can be updated.
 
-        $move_result = make-move [string[,]]$the_board, $the_chests, $move
+        $move_result = make-move -board $theBoard -chests $the_chests -userCoords $move
         if ($move_result -eq $false){
             continue
         }else{
             if ($move_result -eq 'You have found a sunken treasure chest!'){
                 #Updates all sonar devices currently on the map.
                 foreach ($move in $previous_moves){
-                    make_move $the_board, $the_chests, $move
+                    make-move -board $theBoard -chests $the_chests -userCoords $move
                 }
             }
-            write-board $the_board
+            write-board $theBoard
             write-output($move_result)
         }
 
