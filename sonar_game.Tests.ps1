@@ -7,12 +7,13 @@ Describe "Tests for check-coords function" {
     It "Returns true if coordinates are on the board" {
         $move = "10 5"     
         $move = $move.Split()
-        check-onboard @{x=$move[0];y=$move[1] }  | Should Be $true
+        check-onboard -coords @{x=[int]$move[0];y=[int]$move[1]}  | Should Be $true
     }
 
-    It "It returns a board that is a multi dimensional array of strings"{
-        Get-NewBoard | should beoftype string[,]
+    It "Returns false if coordinates aren't on the board"{
+        $move = "10 15"     
+        $move = $move.Split()
+        check-onboard -coords @{x=[int]$move[0];y=[int]$move[1]}  | Should Be $false
     }
-
 
 }

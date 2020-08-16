@@ -58,19 +58,19 @@ function get-chests{
     )
 
     $chests = [System.Collections.ArrayList]@()
-    while ($chests.count -le $num_chests) {
+    while ($chests.count -lt $num_chests) {
         $coords = New-Object -TypeName PSCustomObject -Property @{
             x = (get-random -minimum 0 -maximum 60)
             y = (get-random -minimum 0 -maximum 15)
         }
 
-        # Need to find out of chest is in
+        # Need to find out if a chest with same coordinates is already in the list 
         $chest_exists = $chests | Where-Object {$_.x -eq $coords.x -and $_.y -eq $coords.y}
         if ($null -eq $chest_exists) {
             $chests.add($coords) | Out-Null  # Powershell quirk where the index is returned and added to the array.
         } 
     }
-    return $chests
+    return [System.Collections.ArrayList]$chests
 }
 
 
@@ -78,8 +78,6 @@ function check-onboard {
     param(
         [pscustomobject]$coords
     )
-    $coords.x   
-    $coords.y
     return ($coords.x -ge 0 -and $coords.x -le 59 -and $coords.y -ge 0 -and $coords.y -le 14)
 }
 
@@ -87,31 +85,39 @@ function make-move{
 
     param(
         [string[,]]$board, 
-        [System.collections.arraylist]$chests,
+        [System.Collections.Arraylist]$chests,
         [pscustomobject]$userCoords
     )
 
     $smallestDistance = 100
-
+    $lastChest
     foreach ($chest in $chests){
         $distance = [System.Math]::sqrt(($chest.x - $userCoords.x) * ($chest.x - $userCoords.x) + ($chest.y -$userCoords.y) * ($chest.y - $userCoords.y))
 
         if ($distance -lt $smallestDistance){
             $smallestDistance = $distance
+            # We need a reference to the actual chest object in the list of chests if we remove it later
+            $lastChest = $chest
         }
     }
     $smallestDistance = [System.Math]::Round($smallestDistance)
 
     if ($smallestDistance -eq 0){
         #xy is on a treasure chest!
-        $chests.remove($userCoords)
+        $chests.remove($lastChest)
+
+        $board[$userCoords.x,$userCoords.y] = 'C'
         return 'You have found a sunken treasure chest!'
     }elseif ($smallestDistance -lt 10){
-            $board[$userCoords.x,$userCoords.y] = [String]$smallestDistance
-            return ('Treasure detected at a distance of {0} from the sonar device' -f $smallestDistance)
+            if ($board[$userCoords.x,$userCoords.y] -ne 'C'){
+                $board[$userCoords.x,$userCoords.y] = [String]$smallestDistance
+            }
+            return ("Treasure detected at a distance of {0} from the sonar device `n" -f $smallestDistance)
     }else {
-            $board[$userCoords.x,$userCoords.y] = 'X'
-            return "Sonar didn\'t detect anthing. All treasure chests out of range"
+            if ($board[$userCoords.x,$userCoords.y] -ne 'C'){
+                $board[$userCoords.x,$userCoords.y] = 'X'
+            }            
+            return "Sonar didn't detect anthing. All treasure chests out of range `n"
     }
     
 }
@@ -122,24 +128,25 @@ function Enter-PlayerMove{
     )
 
     # Let player enter their move. Return a two-item list of integer xy coordinates.
-    write-host 'Where do you want to drop the next sonar device? (0-59 0-14) (or type quit)' 
+    write-host 'Where do you want to drop the next sonar device? or type quit)' 
     while ($true) {
+        write-host ('Enter a number from 0 to 59, a space, then a number from 0 to 14')
         $move = read-host
         if ($move.ToLower() -eq 'quit') {
             write-output('Thanks for playing!')
             exit #When used in a function in a script, this will exit the script and not exit the entire PSSession
         }
         $move = $move.split()
-        if ($move.Length -eq 2 -and ($move[0] -as [int]) -and ($move[1] -as [int]) -and
-            (check-onboard [pscustomobject]@{x = [int]$move[0]; y = [int]$move[1]})) {
+        $coords = @{x=$move[0]; y=$move[1]} 
+        if ($move.Length -eq 2 -and ($null -ne ($move[0] -as [int])) -and ($null -ne ($move[1] -as [int])) -and
+            (check-onboard -coords @{x = [int]$move[0]; y = [int]$move[1]})) {
                 $inPreviousMoves = $previous_moves | where-object {$_.x -eq $move[0] -and $_.y -eq $move[1]}
                 if ($inPreviousMoves.Count -ge 1) {
-                    write-output('You already moved there')
+                    write-host ('You already moved there')
                     continue
-                }
+                } 
                 return @{x = [int]$move[0]; y = [int]$move[1]}
         }
-        write-host ('Enter a number from 0 to 59, a space, then a number from 0 to 14')
     }
 }
 
@@ -191,60 +198,69 @@ function show-instructions{
     read-host
 }
 
-write-output 'S O N A R !'
-write-output 'Would you like to view the instructions? (yes/no)'
-if ((read-host).tolower() -like "y*"){
-    show-instructions
-}
+function start-game {
 
-while ($true){
-    # Game setup
-    $sonarDevices = 20
-    $theBoard = Get-NewBoard
-    $the_chests = get-chests -num_chests 3
-    write-board -board $theBoard
-    $previous_moves = [System.Collections.ArrayList]@()
-
-    while ($sonarDevices -gt 0) {
-        write-output ('You have {0} sonar device(s) left. And {1} treasure chest(s) remaining.' -f $sonarDevices, $the_chests.length)
-
-        #$x, $y = Enter-PlayerMove $previous_moves
-        $move = Enter-PlayerMove $previous_moves
-        $previous_moves.add($move) # Track previous moves so that sonar devices can be updated.
-
-        $move_result = make-move -board $theBoard -chests $the_chests -userCoords $move
-        if ($move_result -eq $false){
-            continue
-        }else{
-            if ($move_result -eq 'You have found a sunken treasure chest!'){
-                #Updates all sonar devices currently on the map.
-                foreach ($move in $previous_moves){
-                    make-move -board $theBoard -chests $the_chests -userCoords $move
-                }
-            }
-            write-board $theBoard
-            write-output($move_result)
-        }
-
-        if ($theChests.count -eq 0){
-            write-output 'You have found all the sunken treasure chests! `n
-                            Congratulations and good game!'
-            break
-        }
-
-        $sonar_devices--
+    write-output 'S O N A R !'
+    write-output 'Would you like to view the instructions? (yes/no)'
+    if ((read-host).tolower() -like "y*"){
+        show-instructions
     }
 
-    if ($sonar_devices -eq 0){
-        write-output "We\'ve run out of sonar devices! Now we have to turn the ship around and head"
-        write-output 'for home with treasure chests still out there! Game over.'
-        write-output '   The remaining chests were here:'
-        foreach ($chest in $the_chests){
-            write-output ('    {0}, {1}' -f $chest.x, $chest.y)
+    while ($true){
+        # Game setup
+        $sonarDevices = 20
+        $theBoard = Get-NewBoard
+        $the_chests = [System.Collections.ArrayList](get-chests -num_chests 3)
+        write-board -board $theBoard
+        $previous_moves = [System.Collections.ArrayList]@()
+
+        while ($sonarDevices -gt 0) {
+            write-host ('You have {0} sonar device(s) left. And {1} treasure chest(s) remaining.' -f $sonarDevices, $the_chests.Count)
+
+            $move = Enter-PlayerMove $previous_moves
+            $previous_moves.add($move) # Track previous moves so that sonar devices can be updated.
+
+            $move_result = make-move -board $theBoard -chests $the_chests -userCoords $move
+            if ($move_result -eq $false){
+                continue
+            }else{
+                if ($move_result -eq 'You have found a sunken treasure chest!'){
+                    #Updates all sonar devices currently on the map.
+                    foreach ($move in $previous_moves){
+                        make-move -board $theBoard -chests $the_chests -userCoords $move
+                    }
+                }
+                write-board $theBoard
+                write-output($move_result)
+            }
+
+            if ($the_chests.count -eq 0){
+                write-host "You have found all the sunken treasure chests!
+                    Congratulations and good game!`n"
+                write-host 'Do you want to play again? (yes/no)'
+                    if ((read-host).tolower() -like "y*"){
+                        break
+                    } else {
+                        return
+                }    
+            }
+
+            $sonarDevices--
         }
-        write-output 'Do you want to play again? (yes/no)'
-        if ((read-host).tolower() -like "y*"){
-            break
+
+        if ($sonarDevices -eq 0){
+            write-host "We`'ve run out of sonar devices! Now we have to turn the ship around and head"
+            write-host 'for home with treasure chests still out there! Game over.'
+            write-host '   The remaining chests were here:'
+            foreach ($chest in $the_chests){
+                write-host ('    {0}, {1}' -f $chest.x, $chest.y)
+            }
+            write-host 'Do you want to play again? (yes/no)'
+            if ((read-host).tolower() -like "y*"){
+                continue
+            } else {
+                break
+            }
         }
     }
 }
