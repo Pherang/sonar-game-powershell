@@ -17,3 +17,10 @@ Describe "Tests for check-coords function" {
     }
 
 }
+Describe "Tests the get-chests function" {
+
+    It "Returns an array containing 3 chests"{
+        $chests = get-chests -num_chests 3
+        $chests.count | Should Be 3
+    }
+}
